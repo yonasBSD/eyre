@@ -652,13 +652,13 @@ where
     E: 'static,
 {
     if TypeId::of::<D>() == target {
-        let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, E>>>().as_ref() };
-        let addr = NonNull::from(&unerased._object.msg).cast::<()>();
-        Some(addr)
+        let unerased = e.cast::<ErrorImpl<ContextError<D, E>>>();
+        let addr = unsafe { ptr::addr_of!((*unerased.ptr.as_ptr())._object.msg) };
+        Some(unsafe { NonNull::new_unchecked(addr.cast_mut()).cast::<()>() })
     } else if TypeId::of::<E>() == target {
-        let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, E>>>().as_ref() };
-        let addr = NonNull::from(&unerased._object.error).cast::<()>();
-        Some(addr)
+        let unerased = e.cast::<ErrorImpl<ContextError<D, E>>>();
+        let addr = unsafe { ptr::addr_of!((*unerased.ptr.as_ptr())._object.error) };
+        Some(unsafe { NonNull::new_unchecked(addr.cast_mut()).cast::<()>() })
     } else {
         None
     }
@@ -676,13 +676,13 @@ where
     E: 'static,
 {
     if TypeId::of::<D>() == target {
-        let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, E>>>().into_mut() };
-        let addr = NonNull::from(&unerased._object.msg).cast::<()>();
-        Some(addr)
+        let unerased = e.cast::<ErrorImpl<ContextError<D, E>>>();
+        let addr = unsafe { ptr::addr_of_mut!((*unerased.ptr.as_ptr())._object.msg) };
+        Some(unsafe { NonNull::new_unchecked(addr).cast::<()>() })
     } else if TypeId::of::<E>() == target {
-        let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, E>>>().into_mut() };
-        let addr = NonNull::from(&mut unerased._object.error).cast::<()>();
-        Some(addr)
+        let unerased = e.cast::<ErrorImpl<ContextError<D, E>>>();
+        let addr = unsafe { ptr::addr_of_mut!((*unerased.ptr.as_ptr())._object.error) };
+        Some(unsafe { NonNull::new_unchecked(addr).cast::<()>() })
     } else {
         None
     }
@@ -721,12 +721,13 @@ unsafe fn context_chain_downcast<D>(
 where
     D: 'static,
 {
-    let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, Report>>>().as_ref() };
     if TypeId::of::<D>() == target {
-        let addr = NonNull::from(&unerased._object.msg).cast::<()>();
-        Some(addr)
+        let unerased = e.cast::<ErrorImpl<ContextError<D, Report>>>();
+        let addr = unsafe { ptr::addr_of!((*unerased.ptr.as_ptr())._object.msg) };
+        Some(unsafe { NonNull::new_unchecked(addr.cast_mut()).cast::<()>() })
     } else {
         // Recurse down the context chain per the inner error's vtable.
+        let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, Report>>>().as_ref() };
         let source = &unerased._object.error;
         unsafe { (source.vtable().object_downcast)(source.inner.as_ref(), target) }
     }
@@ -742,12 +743,13 @@ unsafe fn context_chain_downcast_mut<D>(
 where
     D: 'static,
 {
-    let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, Report>>>().into_mut() };
     if TypeId::of::<D>() == target {
-        let addr = NonNull::from(&unerased._object.msg).cast::<()>();
-        Some(addr)
+        let unerased = e.cast::<ErrorImpl<ContextError<D, Report>>>();
+        let addr = unsafe { ptr::addr_of_mut!((*unerased.ptr.as_ptr())._object.msg) };
+        Some(unsafe { NonNull::new_unchecked(addr).cast::<()>() })
     } else {
         // Recurse down the context chain per the inner error's vtable.
+        let unerased = unsafe { e.cast::<ErrorImpl<ContextError<D, Report>>>().into_mut() };
         let source = &mut unerased._object.error;
         unsafe { (source.vtable().object_downcast_mut)(source.inner.as_mut(), target) }
     }
