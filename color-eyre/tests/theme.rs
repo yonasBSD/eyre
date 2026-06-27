@@ -38,7 +38,6 @@ static ERROR_FILE_NAME: &str = "theme_error_control_spantrace.txt";
 #[cfg(all(feature = "capture-spantrace", feature = "track-caller",))]
 static ERROR_FILE_NAME: &str = "theme_error_control.txt";
 
-#[rustversion::attr(nightly, ignore)]
 #[test]
 #[cfg(not(miri))]
 fn test_error_backwards_compatibility() {
@@ -101,7 +100,6 @@ static PANIC_FILE_NAME: &str = "theme_panic_control_no_spantrace.txt";
 static PANIC_FILE_NAME: &str = "theme_panic_control.txt";
 
 // The following tests the installed panic handler
-#[rustversion::attr(nightly, ignore)]
 #[test]
 #[allow(unused_mut)]
 #[allow(clippy::vec_init_then_push)]
@@ -128,6 +126,7 @@ fn test_panic_backwards_compatibility() {
         .args(&features)
         .env("RUSTFLAGS", "-Awarnings")
         .env("CARGO_FUTURE_INCOMPAT_REPORT_FREQUENCY", "never")
+        .env_remove("NO_COLOR")
         .output()
         .expect("failed to execute process");
     let target = String::from_utf8(output.stderr).expect("failed to convert output to `String`");
@@ -173,13 +172,42 @@ fn test_backwards_compatibility(target: String, file_name: &str) {
     }
 
     fn normalize_backtrace(input: &str) -> String {
+        fn contains_crate_path(input: &str, krate: &str, path_prefix: &str) -> bool {
+            input.match_indices(krate).any(|(idx, _)| {
+                let rest = &input[idx + krate.len()..];
+
+                if rest
+                    .strip_prefix("::")
+                    .is_some_and(|path| path.starts_with(path_prefix))
+                {
+                    return true;
+                }
+
+                let Some(rest) = rest.strip_prefix('[') else {
+                    return false;
+                };
+                let Some(disambiguator_end) = rest.find(']') else {
+                    return false;
+                };
+
+                rest[disambiguator_end + 1..]
+                    .strip_prefix("::")
+                    .is_some_and(|path| path.starts_with(path_prefix))
+            })
+        }
+
+        fn is_test_closure_line(line: &str) -> bool {
+            line.contains("test_error_backwards_compatibility::closure")
+                || line.contains("test_error_backwards_compatibility::{{closure}}")
+                || line.contains("test_error_backwards_compatibility::{closure")
+        }
+
         input
             .lines()
             .take_while(|v| {
-                !v.contains("core::panic")
-                    && !v.contains("theme_test_helper::main")
-                    && !v.contains("theme::test_error_backwards_compatibility::closure")
-                    && !v.contains("theme::test_error_backwards_compatibility::{{closure}}")
+                !contains_crate_path(v, "core", "panic")
+                    && !contains_crate_path(v, "theme_test_helper", "main")
+                    && !is_test_closure_line(v)
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -255,7 +283,10 @@ fn test_backwards_compatibility(target: String, file_name: &str) {
 }
 
 fn setup() {
-    unsafe { std::env::set_var("RUST_LIB_BACKTRACE", "1") };
+    unsafe {
+        std::env::set_var("RUST_LIB_BACKTRACE", "1");
+        std::env::remove_var("NO_COLOR");
+    };
 
     #[cfg(feature = "capture-spantrace")]
     {

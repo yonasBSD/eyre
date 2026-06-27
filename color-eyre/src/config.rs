@@ -288,9 +288,6 @@ impl fmt::Display for SourceSection<'_> {
 impl Frame {
     fn is_dependency_code(&self) -> bool {
         const SYM_PREFIXES: &[&str] = &[
-            "std::",
-            "core::",
-            "backtrace::backtrace::",
             "_rust_begin_unwind",
             "color_traceback::",
             "__rust_",
@@ -307,7 +304,11 @@ impl Frame {
 
         // Inspect name.
         if let Some(ref name) = self.name {
-            if SYM_PREFIXES.iter().any(|x| name.starts_with(x)) {
+            if starts_with_crate_path(name, "std")
+                || starts_with_crate_path(name, "core")
+                || starts_with_crate_path_prefix(name, "backtrace", "backtrace::")
+                || SYM_PREFIXES.iter().any(|x| name.starts_with(x))
+            {
                 return true;
             }
         }
@@ -323,6 +324,7 @@ impl Frame {
         if let Some(ref filename) = self.filename {
             let filename = filename.to_string_lossy();
             if FILE_PREFIXES.iter().any(|x| filename.starts_with(x))
+                || filename.contains("/lib/rustlib/src/rust/library/")
                 || filename.contains("/.cargo/registry/src/")
             {
                 return true;
@@ -355,7 +357,13 @@ impl Frame {
         ];
 
         match self.name.as_ref() {
-            Some(name) => SYM_PREFIXES.iter().any(|x| name.starts_with(x)),
+            Some(name) => {
+                starts_with_crate_path_prefix(name, "core", "result::unwrap_failed")
+                    || starts_with_crate_path_prefix(name, "core", "option::expect_none_failed")
+                    || starts_with_crate_path_prefix(name, "core", "panicking::panic_fmt")
+                    || starts_with_crate_path_prefix(name, "std", "panicking::begin_panic")
+                    || SYM_PREFIXES.iter().any(|x| name.starts_with(x))
+            }
             None => false,
         }
     }
@@ -374,7 +382,20 @@ impl Frame {
             _ => return false,
         };
 
-        if SYM_PREFIXES.iter().any(|x| name.starts_with(x)) {
+        if starts_with_crate_path_prefix(name, "std", "rt::lang_start::")
+            || starts_with_crate_path_prefix(
+                name,
+                "std",
+                "sys_common::backtrace::__rust_begin_short_backtrace",
+            )
+            || starts_with_crate_path_prefix(
+                name,
+                "std",
+                "sys::backtrace::__rust_begin_short_backtrace",
+            )
+            || starts_with_crate_path_prefix(name, "test", "run_test::run_test_inner::")
+            || SYM_PREFIXES.iter().any(|x| name.starts_with(x))
+        {
             return true;
         }
 
@@ -773,23 +794,40 @@ fn default_frame_filter(frames: &mut Vec<&Frame>) {
 }
 
 fn eyre_frame_filters(frames: &mut Vec<&Frame>) {
-    let filters = &[
-        "<color_eyre::Handler as eyre::EyreHandler>::default",
-        "eyre::",
-        "color_eyre::",
-    ];
+    let filters = &["<color_eyre::Handler as eyre::EyreHandler>::default"];
 
     frames.retain(|frame| {
-        !filters.iter().any(|f| {
-            let name = if let Some(name) = frame.name.as_ref() {
-                name.as_str()
-            } else {
-                return true;
-            };
+        let name = if let Some(name) = frame.name.as_ref() {
+            name.as_str()
+        } else {
+            return true;
+        };
 
-            name.starts_with(f)
-        })
+        !filters.iter().any(|f| name.starts_with(f))
+            && !starts_with_crate_path(name, "eyre")
+            && !starts_with_crate_path(name, "color_eyre")
     });
+}
+
+fn starts_with_crate_path(name: &str, krate: &str) -> bool {
+    strip_crate_path_prefix(name, krate).is_some()
+}
+
+fn starts_with_crate_path_prefix(name: &str, krate: &str, path_prefix: &str) -> bool {
+    strip_crate_path_prefix(name, krate).is_some_and(|path| path.starts_with(path_prefix))
+}
+
+fn strip_crate_path_prefix<'a>(name: &'a str, krate: &str) -> Option<&'a str> {
+    let name = name.strip_prefix('<').unwrap_or(name);
+    let rest = name.strip_prefix(krate)?;
+
+    if let Some(rest) = rest.strip_prefix("::") {
+        return Some(rest);
+    }
+
+    let rest = rest.strip_prefix('[')?;
+    let disambiguator_end = rest.find(']')?;
+    rest[disambiguator_end + 1..].strip_prefix("::")
 }
 
 struct DefaultPanicMessage(Theme);
